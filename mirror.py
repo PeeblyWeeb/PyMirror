@@ -54,7 +54,6 @@ with open("mirror_config.toml") as f:
     config = tomllib.loads(f.read())
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-r", "--randomize", action="store_true")
 parser.add_argument("-v", "--verbose", action="store_true")
 
 args = parser.parse_args()
@@ -69,7 +68,6 @@ PATH_SEPARATOR: str = config.get("PATH_SEPARATOR")
 REQUIRED_SETTINGS = ["ROOT_FOLDER_PATH", "EXCLUSION_OVERRIDES", "CLOSE_DELAY", "PRESERVE_FILE_NAMES", "MIRROR_FOLDER_PATH", "PATH_SEPARATOR"]
 REAL_MIRROR_FOLDER = MIRROR_FOLDER_PATH / ".Mirror"
 CLOSE_MESSAGE = "This window will close in {0} seconds."
-RANDOMIZE = args.randomize
 VERBOSE = args.verbose
 
 logger = logging.getLogger(__name__)
@@ -94,7 +92,7 @@ if not ROOT_FOLDER_PATH.exists():
     exit()
 if not REAL_MIRROR_FOLDER.exists():
     logger.info(f"Existing .Mirror folder not found in '{MIRROR_FOLDER_PATH}', creating one now!")
-    REAL_MIRROR_FOLDER.touch()
+    REAL_MIRROR_FOLDER.mkdir()
 
 logger.info(f"Using folder '{ROOT_FOLDER_PATH}' as root folder")
 logger.info(f"Using folder '{REAL_MIRROR_FOLDER}' as mirror folder")
