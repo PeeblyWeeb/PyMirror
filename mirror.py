@@ -35,7 +35,7 @@ class CustomFormatter(logging.Formatter):
 
 if not os.path.exists("mirror_config.toml"):
     default_config: tuple[str] = (
-        "# The path to the folder that includes all of your image pair subfolders.",
+        "# The path to the folder that includes all of your subfolders.",
         "ROOT_FOLDER_PATH = \"\"\n",
         "# By default folders starting with '.' in the root folder are excluded, create exclusing by passing in folder names here.",
         "EXCLUSION_OVERRIDES = [\".Single\"]\n",
@@ -141,9 +141,9 @@ def MirrorFiles(path="unknown"):
 
 
 logger.info("Erasing previous mirror")
-for image in os.listdir(REAL_MIRROR_FOLDER):
-    logger.debug(f"Deleting image '{REAL_MIRROR_FOLDER + image}' from previous mirror..")
-    os.remove(REAL_MIRROR_FOLDER + image)
+for file in os.listdir(REAL_MIRROR_FOLDER):
+    logger.debug(f"Deleting file '{REAL_MIRROR_FOLDER + file}' from previous mirror..")
+    os.remove(REAL_MIRROR_FOLDER + file)
 
 
 logger.info("Updating mirror")
