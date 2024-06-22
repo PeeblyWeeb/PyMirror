@@ -1,12 +1,11 @@
-import os
 import shutil
 import argparse
 import tomllib
 import time
-import re
 import logging
 import sys
 
+from pathlib import Path
 from typing import ClassVar
 from string import ascii_letters
 from random import choices
@@ -33,7 +32,7 @@ class CustomFormatter(logging.Formatter):
         formatter = logging.Formatter(log_fmt)
         return formatter.format(record)
 
-if not os.path.exists("mirror_config.toml"):
+if not Path("mirror_config.toml").exists():
     default_config: tuple[str] = (
         "# The path to the folder that includes all of your subfolders.",
         "ROOT_FOLDER_PATH = \"\"\n",
@@ -44,8 +43,6 @@ if not os.path.exists("mirror_config.toml"):
         "# Wether to include the original file names in the mirror folder, does not work when using '--randomize'",
         "PRESERVE_FILE_NAMES = true\n",
         "# Where should the .Mirror folder be placed and read from? Set to '.' for root folder.",
-        "# PLEASE BE CAREFUL WHEN USING THIS SETTING!",
-        "# THE MIRROR FOLDER WILL BE DESTROYED ON EVERY RUN OF THIS SCRIPT, DO NOT SET IT TO AN IMPORTANT FOLDER!",
         "MIRROR_FOLDER_PATH = \".\"\n",
         "# Folder separator for mirrored files, so if a file was located at '<root>/a/b/file.txt' it would be 'a<PATH SEPARATOR>b<PATH SEPARATOR>file.txt' in the mirror folder.",
         "PATH_SEPARATOR = \"#,\""
@@ -56,22 +53,21 @@ if not os.path.exists("mirror_config.toml"):
 with open("mirror_config.toml") as f:
     config = tomllib.loads(f.read())
 
-
 parser = argparse.ArgumentParser()
 parser.add_argument("-r", "--randomize", action="store_true")
 parser.add_argument("-v", "--verbose", action="store_true")
 
 args = parser.parse_args()
 
-ROOT_FOLDER_PATH: str = config.get("ROOT_FOLDER_PATH")
+ROOT_FOLDER_PATH: Path = Path(config.get("ROOT_FOLDER_PATH"))
 EXCLUSION_OVERRIDES: list[str] = config.get("EXCLUSION_OVERRIDES")
 CLOSE_DELAY: int = config.get("CLOSE_DELAY")
 PRESERVE_FILE_NAMES: bool = config.get("PRESERVE_FILE_NAMES")
-MIRROR_FOLDER_PATH: str = config.get("MIRROR_FOLDER_PATH")
+MIRROR_FOLDER_PATH: Path = ROOT_FOLDER_PATH if config.get("MIRROR_FOLDER_PATH") == "." else Path(config.get("MIRROR_FOLDER_PATH"))
 PATH_SEPARATOR: str = config.get("PATH_SEPARATOR")
 
 REQUIRED_SETTINGS = ["ROOT_FOLDER_PATH", "EXCLUSION_OVERRIDES", "CLOSE_DELAY", "PRESERVE_FILE_NAMES", "MIRROR_FOLDER_PATH", "PATH_SEPARATOR"]
-FILE_EXTENSION_REGEX: str = r"^(.*)\.(.*)$"
+REAL_MIRROR_FOLDER = MIRROR_FOLDER_PATH / ".Mirror"
 CLOSE_MESSAGE = "This window will close in {0} seconds."
 RANDOMIZE = args.randomize
 VERBOSE = args.verbose
@@ -93,78 +89,48 @@ if missing_setting_errors:
     logger.critical("Don't see some of those setting in your config file? Delete it and allow it to regenerate.")
     exit()
 
-ROOT_FOLDER_PATH += "/" if not ROOT_FOLDER_PATH.endswith("/") else ""
-logger.info(f"Using folder '{ROOT_FOLDER_PATH}' as root folder")
-
-MIRROR_FOLDER_PATH = ROOT_FOLDER_PATH if MIRROR_FOLDER_PATH == "." else MIRROR_FOLDER_PATH
-MIRROR_FOLDER_PATH += "/" if not MIRROR_FOLDER_PATH.endswith("/") else ""
-REAL_MIRROR_FOLDER = MIRROR_FOLDER_PATH + ".Mirror/"
-logger.info(f"Using folder '{REAL_MIRROR_FOLDER}' as mirror folder")
-
-if not os.path.exists(ROOT_FOLDER_PATH):
+if not ROOT_FOLDER_PATH.exists():
     logger.critical("Root folder path doesn't actually exist, double check your spelling.")
     exit()
-if not os.path.exists(REAL_MIRROR_FOLDER):
+if not REAL_MIRROR_FOLDER.exists():
     logger.info(f"Existing .Mirror folder not found in '{MIRROR_FOLDER_PATH}', creating one now!")
-    os.mkdir(REAL_MIRROR_FOLDER)
+    REAL_MIRROR_FOLDER.touch()
 
-
-def MirrorFiles(path="unknown"):
-    logger.debug(f"Mirroring files & folders from '{path}'")
-    try:
-        for i,file_or_folder in enumerate(os.listdir(ROOT_FOLDER_PATH + path)):
-            # Check if the current file / folder in iteration is a folder or not, if it's a folder, recursively call this function and continue.
-            if not os.path.isfile(ROOT_FOLDER_PATH + f"{path}/{file_or_folder}"):
-                MirrorFiles(f"{path}/{file_or_folder}")
-                continue
-            
-            # Find the current file extension, if there is none warn the user and default to .unknown
-            match = re.match(FILE_EXTENSION_REGEX, file_or_folder, flags=re.IGNORECASE)
-            if match is None:
-                logger.warning(f"No file name extension found on file '{file_or_folder}' !!! (Defaulting to .unknown)")
-                file_name = file_or_folder
-                extension = "unknown"
-            else:
-                file_name = match[1]
-                extension = match[2]
-
-            # Construct the name of the file based on its path and how many other files have the same path
-            FILE_NAME = f"{PATH_SEPARATOR.join(path.split('/'))}.{file_name if PRESERVE_FILE_NAMES else i}.{extension}" if not RANDOMIZE else f"{''.join(choices(ascii_letters, k=20))}.{extension}"
-            logger.debug(f"Copying file '{file_or_folder}' to '{REAL_MIRROR_FOLDER}{FILE_NAME}' ..")
-            try:
-                shutil.copyfile(ROOT_FOLDER_PATH + f"{path}/{file_or_folder}", REAL_MIRROR_FOLDER + FILE_NAME)
-            except OSError as e:
-                logger.error(f"Skipping file {ROOT_FOLDER_PATH + f"{path}/{file_or_folder}"} because the system threw a permission error! ({e})")
-                continue
-    except OSError as e:
-        logger.error(f"Skipping folder '{path}' because the system threw a permission error! ({e})")
-
+logger.info(f"Using folder '{ROOT_FOLDER_PATH}' as root folder")
+logger.info(f"Using folder '{REAL_MIRROR_FOLDER}' as mirror folder")
 
 logger.info("Erasing previous mirror")
-for file in os.listdir(REAL_MIRROR_FOLDER):
-    logger.debug(f"Deleting file '{REAL_MIRROR_FOLDER + file}' from previous mirror..")
-    os.remove(REAL_MIRROR_FOLDER + file)
-
-
+for fsobj in REAL_MIRROR_FOLDER.iterdir():
+    logger.debug(f"Deleting file '{fsobj.name}' from previous mirror..")
+    fsobj.unlink()
+    
 logger.info("Updating mirror")
-for folder_name in os.listdir(ROOT_FOLDER_PATH):
-    if os.path.isfile(ROOT_FOLDER_PATH + folder_name):
-        logger.warning(f"Ignoring file '{folder_name}' because it is not a folder, only folders should be in the root folder.")
-        continue
-    if folder_name.startswith(".") and folder_name not in EXCLUSION_OVERRIDES:
-        if VERBOSE:
-            logger.debug(f"Skipping folder '{folder_name}' because it starts with '.' and it is not added as an exclusion override.")
-        continue
+def mirror_folder(path: Path):
+    for i,fsobj in enumerate(path.iterdir()):
+        if fsobj.name.startswith(".") and fsobj.name not in EXCLUSION_OVERRIDES:
+            logger.debug(f"Skipping folder '{fsobj.name}' because it starts with '.' and it is not added as an exclusion override.")
+            continue
+        if not fsobj.is_file():
+            mirror_folder(fsobj)
+            continue
+        if fsobj.suffix == ".ini":
+            logger.debug(f"Skipping file '{fsobj.name}' because it uses the file extension '.ini'.")
+            continue
 
-    MirrorFiles(folder_name)
-logger.info("Mirror updated! If something doesn't look right, double check for warnings above!\n")
+        relative_fsobj = fsobj.relative_to(ROOT_FOLDER_PATH)
+        file_name = f"{relative_fsobj.as_posix().replace("/", PATH_SEPARATOR)}" \
+                    if PRESERVE_FILE_NAMES else \
+                    f"{relative_fsobj.parent.as_posix().replace("/", PATH_SEPARATOR)}-{i}{relative_fsobj.suffix}"
+        
+        logger.debug(f"Copying file '{fsobj.name}' to '{REAL_MIRROR_FOLDER / file_name}' ..")
+        shutil.copyfile(str(fsobj), REAL_MIRROR_FOLDER / file_name)
+mirror_folder(ROOT_FOLDER_PATH)
 
-if CLOSE_DELAY == -1:
-    logger.warning("This window will never close, feel free to close it at your leisure.")
-    while True:
-        pass
-if CLOSE_DELAY == 0:
-    exit()
+logger.info("Mirror updated! If something doesn't look right, double check for warnings above!")
+logger.info("Still can't find your problem? Try running with '-v' or '--verbose'")
+
+while CLOSE_DELAY == -1:
+    pass
 for i in range(CLOSE_DELAY):
     logger.info(CLOSE_MESSAGE.format(CLOSE_DELAY - i) + "." * i)
     time.sleep(CLOSE_DELAY / CLOSE_DELAY)
